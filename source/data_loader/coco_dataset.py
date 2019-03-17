@@ -2,7 +2,6 @@ from torchvision import datasets, transforms
 from torch.utils.data.dataset import Dataset
 
 
-import albumentations as A
 
 from base import BaseDataLoader
 
@@ -21,7 +20,7 @@ class COCODataLoader(BaseDataLoader):
 
 class COCODataSet(Dataset):
     def __init__(self, data_dir, training):
-
+        print('')
 
     def __getitem__(self, index):
         frame, label = self.dataset.__getitem__(index)
