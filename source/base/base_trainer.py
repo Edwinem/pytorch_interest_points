@@ -13,17 +13,17 @@ class BaseTrainer:
     Base class for all trainers
     """
 
-    def __init__(self, model, loss, metrics, optimizer, resume, config, train_logger=None):
+    def __init__(self, model, losses, metrics, optimizer, resume, config, train_logger=None):
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
         # setup GPU device if available, move model into configured device
-        self.device, device_ids = self._prepare_device(config['n_gpu'])
+        self.device, device_ids = self._prepare_device(config['n_gpu'], config.get('gpu_list'))
         self.model = model.to(self.device)
         if len(device_ids) > 1:
             self.model = torch.nn.DataParallel(model, device_ids=device_ids)
 
-        self.loss = loss
+        self.losses = losses
         self.metrics = metrics
         self.optimizer = optimizer
         self.train_logger = train_logger
@@ -63,8 +63,8 @@ class BaseTrainer:
         if resume:
             self._resume_checkpoint(resume)
 
-    def _prepare_device(self, n_gpu_use):
-        """ 
+    def _prepare_device(self, n_gpu_use, preferred_list=None):
+        """
         setup GPU device if available, move model into configured device
         """
         n_gpu = torch.cuda.device_count()
@@ -78,12 +78,12 @@ class BaseTrainer:
                     n_gpu_use, n_gpu))
             n_gpu_use = n_gpu
 
-        device = None
+        device=None
 
         # If given utilize the GPUs in the preferred list. Else utilize all of them
-        list_ids = []
+        list_ids=[]
         if (preferred_list and len(preferred_list) != 0):
-            cuda_str = 'cuda:{}'.format(preferred_list[0])
+            cuda_str='cuda:{}'.format(preferred_list[0])
             device = torch.device(cuda_str if n_gpu_use > 0 else 'cpu')
             for gpu_num in preferred_list:
                 if gpu_num < n_gpu:

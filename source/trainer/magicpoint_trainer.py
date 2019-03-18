@@ -12,9 +12,9 @@ class MagicPointTrainer(BaseTrainer):
         Inherited from BaseTrainer.
     """
 
-    def __init__(self, model, loss, metrics, optimizer, resume, config,
+    def __init__(self, model, losses, metrics, optimizer, resume, config,
                  data_loader, valid_data_loader=None, lr_scheduler=None, train_logger=None):
-        super(MagicPointTrainer, self).__init__(model, loss, metrics, optimizer, resume, config, train_logger)
+        super(MagicPointTrainer, self).__init__(model, losses, metrics, optimizer, resume, config, train_logger)
         self.config = config
         self.data_loader = data_loader
         self.valid_data_loader = valid_data_loader
@@ -50,19 +50,30 @@ class MagicPointTrainer(BaseTrainer):
 
         total_loss = 0
         total_metrics = np.zeros(len(self.metrics))
-        for batch_idx, (data, target) in enumerate(self.data_loader):
-            data, target = data.to(self.device), target.to(self.device)
+        for batch_idx, data in enumerate(self.data_loader):
+
+            image=data[0]
+            kp_map=data[1]
+            valid_mask=data[2]
+
+            image=image.to(self.device)
+            kp_map=kp_map.to(self.device)
+            valid_mask=kp_map.to(self.device)
+
 
             self.optimizer.zero_grad()
-            output = self.model(data)
-            loss = self.loss(output, target)
+            output = self.model(image)
+            detector_loss=self.losses['DetectorLoss'][0]
+
+            loss=detector_loss.forward(output,kp_map)
             loss.backward()
             self.optimizer.step()
+
 
             self.writer.set_step((epoch - 1) * len(self.data_loader) + batch_idx)
             self.writer.add_scalar('loss', loss.item())
             total_loss += loss.item()
-            total_metrics += self._eval_metrics(output, target)
+            #total_metrics += self._eval_metrics(output, target)
 
             if self.verbosity >= 2 and batch_idx % self.log_step == 0:
                 self.logger.info('Train Epoch: {} [{}/{} ({:.0f}%)] Loss: {:.6f}'.format(
@@ -71,11 +82,11 @@ class MagicPointTrainer(BaseTrainer):
                     self.data_loader.n_samples,
                     100.0 * batch_idx / len(self.data_loader),
                     loss.item()))
-                self.writer.add_image('input', make_grid(data.cpu(), nrow=8, normalize=True))
+               # self.writer.add_image('input', make_grid(data.cpu(), nrow=8, normalize=True))
 
         log = {
             'loss': total_loss / len(self.data_loader),
-            'metrics': (total_metrics / len(self.data_loader)).tolist()
+           # 'metrics': (total_metrics / len(self.data_loader)).tolist()
         }
 
         if self.do_validation:

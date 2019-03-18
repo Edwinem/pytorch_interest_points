@@ -6,16 +6,26 @@ import tarfile
 import cv2
 from tqdm import tqdm
 from multiprocessing import Pool, Process, Manager,cpu_count
+import h5py
+import logging
 
 import shutil
-
+import torch
 
 from base import BaseDataLoader
 
 from data_loader.utils.pipeline import parse_primitives
 from data_loader.utils.synthetic_shapes_funcs import set_random_state,generate_background
 import data_loader.utils.synthetic_shapes_funcs as synthetic_dataset
+import data_loader.utils.pipeline as pipeline
 
+import torch.nn.functional as F
+
+
+def my_collate(batch):
+    data = [item[0] for item in batch]
+    target = [item[1] for item in batch]
+    return [data, target]
 
 class SyntheticDataLoader(BaseDataLoader):
     def __init__(
@@ -82,7 +92,7 @@ class SyntheticDataSet(Dataset):
         'gaussian_noise'
     ]
 
-    def __init__(self, data_dir, config=default_config):
+    def __init__(self, data_dir, config=default_config,force_recache=False):
         self.data_dir=data_dir
         self.config=config
 
@@ -98,50 +108,151 @@ class SyntheticDataSet(Dataset):
 
         splits = {s: {'images': [], 'points': []}
                   for s in ['training', 'validation', 'test']}
+
+
+        self.train_samples=[]
         for primitive in primitives:
-            tar_path = os.path.join(basepath, '{}.tar.gz'.format(primitive))
-            if not os.path.exists(tar_path):
-                self.dump_primitive_data(primitive, tar_path, config)
+            folder=os.path.join(basepath,primitive)
+            img_folder=os.path.join(folder,'images')
+            pts_folder=os.path.join(folder,'points')
+            flag_generate_data=False
 
-            # Untar locally
-            tmp_dir = os.path.join(data_dir, 'tmp')
-            os.makedirs(tmp_dir, exist_ok=True)
-            tar = tarfile.open(tar_path)
-            tar.extractall(path=tmp_dir)
-            tar.close()
+            #Check that we previosly created all the data
+            if os.path.exists(folder):
+                if os.path.exists(img_folder):
+                    num_images=len(os.listdir(os.path.join(img_folder,'training')))
+                    num_pts=len(os.listdir(os.path.join(pts_folder,'training')))
+                    req_num=config['generation']['split_sizes']['training']
+                    if num_images!=req_num or num_pts!=req_num:
+                        flag_generate_data=True
+                else:
+                    flag_generate_data=True
+            else:
+                flag_generate_data=True
+            if flag_generate_data or force_recache:
+                self.generate_primitive_data(primitive, folder, config)
 
+            img_files=os.listdir(os.path.join(img_folder,'training'))
+            pt_files=os.listdir(os.path.join(pts_folder,'training'))
             # Gather filenames in all splits, optionally truncate
-            truncate = config['truncate'].get(primitive, 1)
-            path = os.path.join(tmp_dir, primitive)
-            for s in splits:
-                dir=os.path.join(path, 'images', s)
-                e = [str(p) for p in os.listdir(dir)]
-                f = [p.replace('images', 'points') for p in e]
-                f = [p.replace('.png', '.npy') for p in f]
-                splits[s]['images'].extend(e[:int(truncate * len(e))])
-                splits[s]['points'].extend(f[:int(truncate * len(f))])
+            img_files.sort()
+            pt_files.sort()
 
-        # Shuffle
-        for s in splits:
-            perm = np.random.RandomState(0).permutation(len(splits[s]['images']))
-            for obj in ['images', 'points']:
-                splits[s][obj] = np.array(splits[s][obj])[perm].tolist()
+            for idx in range(0,len(img_files)):
+                sample=(os.path.join(img_folder,'training',img_files[idx]),os.path.join(pts_folder,'training',pt_files[idx]))
+                self.train_samples.append(sample)
+
+
+        # # Shuffle
+        # for s in splits:
+        #     perm = np.random.RandomState(0).permutation(len(splits[s]['images']))
+        #     for obj in ['images', 'points']:
+        #         splits[s][obj] = np.array(splits[s][obj])[perm].tolist()
+
+
+        # for primitive in primitives:
+        #     h5file=os.path.join(basepath,'{}.hdf5'.format(primitive))
+        #     tar_path = os.path.join(basepath, '{}.tar.gz'.format(primitive))
+        #     if not os.path.exists(tar_path):
+        #         self.dump_primitive_data_tar(primitive, tar_path, config)
+        #
+        #     # Untar locally
+        #     tmp_dir = os.path.join(data_dir, 'tmp')
+        #     os.makedirs(tmp_dir, exist_ok=True)
+        #     tar = tarfile.open(tar_path)
+        #     tar.extractall(path=tmp_dir)
+        #     tar.close()
+        #
+        #     # Gather filenames in all splits, optionally truncate
+        #     truncate = config['truncate'].get(primitive, 1)
+        #     path = os.path.join(tmp_dir, primitive)
+        #     for s in splits:
+        #         dir=os.path.join(path, 'images', s)
+        #         e = [str(p) for p in os.listdir(dir)]
+        #         f = [p.replace('images', 'points') for p in e]
+        #         f = [p.replace('.png', '.npy') for p in f]
+        #         splits[s]['images'].extend(e[:int(truncate * len(e))])
+        #         splits[s]['points'].extend(f[:int(truncate * len(f))])
+        #
+        # # Shuffle
+        # for s in splits:
+        #     perm = np.random.RandomState(0).permutation(len(splits[s]['images']))
+        #     for obj in ['images', 'points']:
+        #         splits[s][obj] = np.array(splits[s][obj])[perm].tolist()
 
         self.split= splits
 
+    def __len__(self):
+        return len(self.train_samples)
 
     def __getitem__(self, index):
-        frame, label = self.dataset.__getitem__(index)
-        data = {
-            "frame": frame,
-            "label": label,
-        }
-        return data
+        def _gen_shape():
+            primitives = parse_primitives(self.config['primitives'], self.drawing_primitives)
+            while True:
+                primitive = np.random.choice(primitives)
+                image = synthetic_dataset.generate_background(
+                    self.config['generation']['image_size'],
+                    **self.config['generation']['params']['generate_background'])
+                points = np.array(getattr(synthetic_dataset, primitive)(
+                    image, **self.config['generation']['params'].get(primitive, {})))
+                yield (np.expand_dims(image, axis=-1).astype(np.float32),
+                       np.flip(points.astype(np.float32), 1))
 
-    def __len__(self):
-        return len(self.dataset)
+        def _read_image(filename):
+            image = cv2.imread(filename,0)
+            image=image.astype('float32') / 255.
+            return image
 
-    def dump_primitive_data(self, primitive, tar_path, config):
+            # Python function
+
+        def _read_points(filename):
+            return np.load(filename).astype(np.float32)
+
+        if self.config['on-the-fly']:
+            data = tf.data.Dataset.from_generator(
+                _gen_shape, (tf.float32, tf.float32),
+                (tf.TensorShape(config['generation']['image_size'] + [1]),
+                 tf.TensorShape([None, 2])))
+            data = data.map(lambda i, c: pipeline.downsample(
+                i, c, **config['preprocessing']))
+
+
+        sample=self.train_samples[index]
+        image=_read_image(sample[0])
+        pts=np.reshape(_read_points(sample[1]),[-1, 2])
+
+        data={'image':image,'keypoints':pts}
+        data=pipeline.add_dummy_valid_mask(data)
+
+
+
+        # Apply augmentation
+        if self.config['augmentation']['photometric']['enable']:
+            data = pipeline.photometric_augmentation(
+                data, **self.config['augmentation']['photometric'])
+        if self.config['augmentation']['homographic']['enable']:
+            data = pipeline.homographic_augmentation(
+                data, **self.config['augmentation']['homographic'])
+
+        # Convert the point coordinates to a dense keypoint map
+        data = pipeline.add_keypoint_map(data)
+
+        #Convert to tensors
+        data['image']=torch.from_numpy(data['image'])
+        data['keypoints']=torch.from_numpy(data['keypoints'])
+        data['valid_mask'] = torch.from_numpy(data['valid_mask'])
+        data['keypoint_map']=torch.from_numpy(data['keypoint_map'])
+        keypoints=data['keypoints']
+        pad_size=int(500-keypoints.shape[0])
+        pad=torch.zeros((pad_size,2))
+        keypoints=torch.cat((keypoints,pad))
+        #return data
+
+        data['image']=torch.unsqueeze(data['image'],0)
+
+        return data['image'],data['keypoint_map'],data['valid_mask']
+
+    def dump_primitive_data_tar(self, primitive, tar_path, config):
         temp_dir =os.path.join(self.data_dir, 'tmp', primitive)
 
         set_random_state(np.random.RandomState(
@@ -166,6 +277,23 @@ class SyntheticDataSet(Dataset):
         tar.close()
         shutil.rmtree(temp_dir)
 
+    def generate_primitive_data(self, primitive, folder, config):
+        logging.info('Generating data for primitive {}'.format(primitive))
+        set_random_state(np.random.RandomState(
+                config['generation']['random_seed']))
+        for split, size in self.config['generation']['split_sizes'].items():
+            img_dir, pts_dir = [os.path.join(folder, i, split) for i in ['images', 'points']]
+            os.makedirs(img_dir,exist_ok=True)
+            os.makedirs(pts_dir,exist_ok=True)
+
+            num_processes=max(cpu_count()-2,1)
+            indices=range(size)
+            try:
+                import parmap
+                parmap.map(generate_pts, config,primitive,img_dir,pts_dir,indices, pm_pbar=True,pm_processes=num_processes,pm_chunksize=500)
+            except:
+                for i in tqdm(indices):
+                     generate_pts(config,primitive,img_dir,pts_dir,i)
 
 
 def generate_pts(config,primitive_type,img_dir,pts_dir,index):
@@ -185,3 +313,20 @@ def generate_pts(config,primitive_type,img_dir,pts_dir,index):
 
     cv2.imwrite(str(os.path.join(img_dir, '{}.png'.format(index))), image)
     np.save(os.path.join(pts_dir, '{}.npy'.format(index)), points)
+
+def generate_pts_no_save(config,primitive_type):
+    image = generate_background(
+        config['generation']['image_size'],
+        **config['generation']['params']['generate_background'])
+    points = np.array(getattr(synthetic_dataset, primitive_type)(
+        image, **config['generation']['params'].get(primitive_type, {})))
+    points = np.flip(points, 1)  # reverse convention with opencv
+
+    b = config['preprocessing']['blur_size']
+    image = cv2.GaussianBlur(image, (b, b), 0)
+    points = (points * np.array(config['preprocessing']['resize'], np.float)
+              / np.array(config['generation']['image_size'], np.float))
+    image = cv2.resize(image, tuple(config['preprocessing']['resize'][::-1]),
+                       interpolation=cv2.INTER_LINEAR)
+
+    return image,points

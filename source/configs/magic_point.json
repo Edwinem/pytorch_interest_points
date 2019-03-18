@@ -1,5 +1,6 @@
 {
   "name": "synthetic_shapes",
+    "n_gpu": 1,
   "model": {
     "type": "MagicPointModel",
     "args": {}
@@ -16,10 +17,10 @@
   "data_loader": {
     "type": "SyntheticDataLoader",
     "args": {
-      "batch_size": 128,
+      "batch_size": 2,
       "shuffle": true,
-      "validation_split": 0.1,
-      "num_workers": 2,
+      "validation_split": 0.0,
+      "num_workers": 0,
       "pin_memory": true,
       "dataset_args": {
         "data_dir": "/home/nikolausmitchell/programming/pytorch_interest_points/data"
@@ -36,9 +37,10 @@
   },
   "losses": [
     {
-      "type": "CrossEntropyLoss",
+      "type": "DetectorLoss",
       "weight": 1,
       "args": {
+        "grid_size":8
       }
     }
   ],

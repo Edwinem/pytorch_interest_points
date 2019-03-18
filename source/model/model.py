@@ -91,7 +91,6 @@ class SuperPointNiko(BaseModel):
             x = self.conv4b(x)
             x = self.relu(x)
             x = self.b_4b(x)
-            x=self.pool(x)
         else:
             # 1
             x = self.conv1a(x)
@@ -124,7 +123,6 @@ class SuperPointNiko(BaseModel):
 
             x = self.conv4b(x)
             x = self.relu(x)
-            x = self.pool(x)
 
         #Detector
         det=self.relu(self.convPa(x))
@@ -144,86 +142,84 @@ class MagicPointModel(nn.Module):
         super(MagicPointModel, self).__init__()
         
         self.SuperPointModel=SuperPointNiko(use_batchnorm)
-        self.use_batchnorm=use_batchnorm
+        self.use_batch_norm=use_batchnorm
         
     def forward(self, x):
         if self.use_batch_norm:
             #1
-            x=self.SuperPointModelconv1a(x)
-            x=self.SuperPointModelrelu(x)
-            x=self.SuperPointModelb_1a(x)
+            x=self.SuperPointModel.conv1a(x)
+            x=self.SuperPointModel.relu(x)
+            x=self.SuperPointModel.b_1a(x)
 
-            x=self.SuperPointModelconv1b(x)
-            x=self.SuperPointModelrelu(x)
-            x=self.SuperPointModelb_1b(x)
-            x=self.SuperPointModelpool(x)
+            x=self.SuperPointModel.conv1b(x)
+            x=self.SuperPointModel.relu(x)
+            x=self.SuperPointModel.b_1b(x)
+            x=self.SuperPointModel.pool(x)
 
             #2
-            x = self.SuperPointModelconv2a(x)
-            x = self.SuperPointModelrelu(x)
-            x = self.SuperPointModelb_2a(x)
+            x = self.SuperPointModel.conv2a(x)
+            x = self.SuperPointModel.relu(x)
+            x = self.SuperPointModel.b_2a(x)
 
-            x = self.SuperPointModelconv2b(x)
-            x = self.SuperPointModelrelu(x)
-            x = self.SuperPointModelb_2b(x)
-            x=self.SuperPointModelpool(x)
+            x = self.SuperPointModel.conv2b(x)
+            x = self.SuperPointModel.relu(x)
+            x = self.SuperPointModel.b_2b(x)
+            x=self.SuperPointModel.pool(x)
 
             #3
-            x = self.SuperPointModelconv3a(x)
-            x = self.SuperPointModelrelu(x)
-            x = self.SuperPointModelb_3a(x)
+            x = self.SuperPointModel.conv3a(x)
+            x = self.SuperPointModel.relu(x)
+            x = self.SuperPointModel.b_3a(x)
 
-            x = self.SuperPointModelconv3b(x)
-            x = self.SuperPointModelrelu(x)
-            x = self.SuperPointModelb_3b(x)
-            x=self.SuperPointModelpool(x)
+            x = self.SuperPointModel.conv3b(x)
+            x = self.SuperPointModel.relu(x)
+            x = self.SuperPointModel.b_3b(x)
+            x=self.SuperPointModel.pool(x)
 
             #4
 
-            x = self.SuperPointModelconv4a(x)
-            x = self.SuperPointModelrelu(x)
-            x = self.SuperPointModelb_4a(x)
+            x = self.SuperPointModel.conv4a(x)
+            x = self.SuperPointModel.relu(x)
+            x = self.SuperPointModel.b_4a(x)
 
-            x = self.SuperPointModelconv4b(x)
-            x = self.SuperPointModelrelu(x)
-            x = self.SuperPointModelb_4b(x)
-            x=self.SuperPointModelpool(x)
+            x = self.SuperPointModel.conv4b(x)
+            x = self.SuperPointModel.relu(x)
+            x = self.SuperPointModel.b_4b(x)
         else:
             # 1
-            x = self.SuperPointModelconv1a(x)
-            x = self.SuperPointModelrelu(x)
+            x = self.SuperPointModel.conv1a(x)
+            x = self.SuperPointModel.relu(x)
 
-            x = self.SuperPointModelconv1b(x)
-            x = self.SuperPointModelrelu(x)
-            x = self.SuperPointModelpool(x)
+            x = self.SuperPointModel.conv1b(x)
+            x = self.SuperPointModel.relu(x)
+            x = self.SuperPointModel.pool(x)
 
             # 2
-            x = self.SuperPointModelconv2a(x)
-            x = self.SuperPointModelrelu(x)
+            x = self.SuperPointModel.conv2a(x)
+            x = self.SuperPointModel.relu(x)
 
-            x = self.SuperPointModelconv2b(x)
-            x = self.SuperPointModelrelu(x)
-            x = self.SuperPointModelpool(x)
+            x = self.SuperPointModel.conv2b(x)
+            x = self.SuperPointModel.relu(x)
+            x = self.SuperPointModel.pool(x)
 
             # 3
-            x = self.SuperPointModelconv3a(x)
-            x = self.SuperPointModelrelu(x)
+            x = self.SuperPointModel.conv3a(x)
+            x = self.SuperPointModel.relu(x)
 
-            x = self.SuperPointModelconv3b(x)
-            x = self.SuperPointModelrelu(x)
-            x = self.SuperPointModelpool(x)
+            x = self.SuperPointModel.conv3b(x)
+            x = self.SuperPointModel.relu(x)
+            x = self.SuperPointModel.pool(x)
 
             # 4
 
-            x = self.SuperPointModelconv4a(x)
-            x = self.SuperPointModelrelu(x)
+            x = self.SuperPointModel.conv4a(x)
+            x = self.SuperPointModel.relu(x)
 
-            x = self.SuperPointModelconv4b(x)
-            x = self.SuperPointModelrelu(x)
-            x = self.SuperPointModelpool(x)
+            x = self.SuperPointModel.conv4b(x)
+            x = self.SuperPointModel.relu(x)
 
         #Detector
-        det=self.SuperPointModelrelu(self.SuperPointModelconvPa(x))
-        heatmap=self.SuperPointModelconvPb(det)
+        det=self.SuperPointModel.relu(self.SuperPointModel.convPa(x))
+        heatmap=self.SuperPointModel.convPb(det)
         
         return heatmap

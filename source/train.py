@@ -15,7 +15,7 @@ from utils import util
 def get_instance(module, name, config, *args):
     return getattr(module, config[name]['type'])(*args, **config[name]['args'])
 
-def search_module_and_get_instance(module,name,config):
+def search_module_and_get_instance(module,name,config,**kwargs):
     '''
     Searches through the module _all_ variable and tries to find the specified class.
 
@@ -34,7 +34,26 @@ def search_module_and_get_instance(module,name,config):
         mod=getattr(module,str(m))
         if hasattr(mod,config[name]['type']):
             print('LOADING \"{}\" of type \"{}\" from \"{}\" '.format(name,config[name]['type'],mod))
-            return get_instance(mod,name,config)
+            return get_instance(mod,name,config,**kwargs)
+    print('ERROR: Could not find {} in any of the modules under {}. Please make sure that the class exists '
+          'and you spelled it correctly'.format(config[name]['type'],module))
+    exit(1)
+
+def search_module_and_get_attr(module,name,config,**kwargs):
+    '''
+    Searches through the module _all_ variable and tries to find the specified class. Same as
+    search_module_and_get_instance expect it returns an attr instead
+
+    :param module:
+    :param name:
+    :param config:
+    :return:
+    '''
+    for m in module.__all__:
+        mod=getattr(module,str(m))
+        if hasattr(mod,config[name]['type']):
+            print('LOADING \"{}\" of type \"{}\" from \"{}\" '.format(name,config[name]['type'],mod))
+            return getattr(mod,config[name]['type'])
     print('ERROR: Could not find {} in any of the modules under {}. Please make sure that the class exists '
           'and you spelled it correctly'.format(config[name]['type'],module))
     exit(1)
@@ -66,7 +85,8 @@ def main(config, resume):
     lr_scheduler = get_instance(torch.optim.lr_scheduler, 'lr_scheduler', config, optimizer)
 
 
-    Trainer=getattr(module_trainer,config['trainer']['type'])
+
+    Trainer=search_module_and_get_attr(module_trainer,'trainer',config)
     trainer = Trainer(model, losses, metrics, optimizer,
                       resume=resume,
                       config=config,

@@ -19,16 +19,56 @@ class MSELoss(nn.Module):
     def forward(self, logits, target):
         return self.loss_fn(logits, target)
 
+
+class SpaceToDepth(nn.Module):
+    def __init__(self, block_size):
+        super(SpaceToDepth, self).__init__()
+        self.block_size = block_size
+        self.block_size_sq = block_size*block_size
+
+    def forward(self, input):
+        output = input.permute(0, 2, 3, 1)
+        (batch_size, s_height, s_width, s_depth) = output.size()
+        d_depth = s_depth * self.block_size_sq
+        d_width = int(s_width / self.block_size)
+        d_height = int(s_height / self.block_size)
+        t_1 = output.split(self.block_size, 2)
+        stack = [t_t.contiguous().view(batch_size, d_height, d_depth) for t_t in t_1]
+        output = torch.stack(stack, 1)
+        output = output.permute(0, 2, 1, 3)
+        output = output.permute(0, 3, 1, 2)
+        return output
+
+class DepthToSpace(nn.Module):
+    def __init__(self, block_size):
+        super(DepthToSpace, self).__init__()
+        self.block_size = block_size
+        self.block_size_sq = block_size*block_size
+
+    def forward(self, input):
+        output = input.permute(0, 2, 3, 1)
+        (batch_size, input_height, input_width, input_depth) = output.size()
+        output_depth = int(input_depth / self.block_size_sq)
+        output_width = int(input_width * self.block_size)
+        output_height = int(input_height * self.block_size)
+        t_1 = output.reshape(batch_size, input_height, input_width, self.block_size_sq, output_depth)
+        spl = t_1.split(self.block_size, 3)
+        stacks = [t_t.reshape(batch_size,input_height,output_width,output_depth) for t_t in spl]
+        output = torch.stack(stacks,0).transpose(0,1).permute(0,2,1,3,4).reshape(batch_size,output_height,output_width,output_depth)
+        output = output.permute(0, 3, 1, 2)
+        return output
+
 class DetectorLoss(nn.Module):
     def __init__(self,grid_size):
         super(DetectorLoss,self).__init__()
 
         self.grid_size=grid_size
+        self.s2d=SpaceToDepth(8)
 
-    def forward(self,output,target):
-        def detector_loss(keypoint_map, logits, valid_mask=None, **config):
+    def forward(self,logits,keypoint_map, valid_mask=None):
+        def detector_loss(logits,keypoint_map, valid_mask=None, **config):
             # Convert the boolean labels to indices including the "no interest point" dustbin
-            labels = tf.to_float(keypoint_map[..., torch.newaxis])  # for GPU
+            labels = tf.to_float(keypoint_map[..., tf.newaxis])  # for GPU
             labels = tf.space_to_depth(labels, config['grid_size'])
             shape = tf.concat([tf.shape(labels)[:3], [1]], axis=0)
             labels = tf.argmax(tf.concat([2 * labels, tf.ones(shape)], 3), axis=3)
@@ -39,11 +79,23 @@ class DetectorLoss(nn.Module):
             valid_mask = tf.space_to_depth(valid_mask, config['grid_size'])
             valid_mask = tf.reduce_prod(valid_mask, axis=3)  # AND along the channel dim
 
-            loss_fn=nn.CrossEntropyLoss(weight=valid_mask)
-            loss=loss_fn(labels,target)
+            loss = tf.losses.sparse_softmax_cross_entropy(
+                labels=labels, logits=logits, weights=valid_mask)
+
+        labels=keypoint_map
+        labels=labels[:,None,:,:]
+        labels=self.s2d.forward(labels)
+        uno=torch.tensor([1],device=labels.device)
+        new_shape=labels.shape
+        new_shape=torch.Size((new_shape[0],1,new_shape[2],new_shape[3]))
+        labels=torch.cat((2*labels,torch.ones(new_shape,device=labels.device)),dim=1)
+        labels=torch.argmax(labels,dim=1)
+
+        loss_fn = nn.CrossEntropyLoss()
+        loss = loss_fn(logits,labels.long())
+        return loss
 
 
-            return loss
 
 
 class DescriptorLoss(nn.Module):
