@@ -85,7 +85,7 @@ PyTorch deep learning project made easy.
 
 ## Usage
 The code in this repo is an MNIST example of the template.
-Try `python3 train.py -c config.json` to run code.
+Try `python3 train.py -c configs/config.json` to run code.
 
 ### Config file format
 Config files are in `.json` format:
