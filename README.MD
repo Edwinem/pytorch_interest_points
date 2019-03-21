@@ -37,7 +37,7 @@ Then run
 
 
 
-##References
+## References
 
 
 If using this please cite the originally SuperPoint paper
