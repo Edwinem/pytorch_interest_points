@@ -14,7 +14,10 @@ def json_remove_comments(json_file):
     '''
     try:
         from json_minify import json_minify
-        return json_minify(json_file)
+        json_out=''
+        for line in json_file:  # Read it all in
+            json_out += line
+        return json_minify(json_out)
     except ImportError:
         json_out=''
         for line in json_file:  # Read it all in
