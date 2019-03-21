@@ -89,6 +89,7 @@ class MagicPointTrainer(BaseTrainer):
                 img_data=image.cpu().numpy()[0]
                 semi=output.cpu().detach().numpy()[0]
                 gt_heatmap=kp_map.cpu().numpy()[0]
+                #Draw the ground truth. Doing this before so the detected keypoints can cover the gt
                 img=cutil.draw_heatmap(img_data,gt_heatmap,color=(0,1.0,0))
                 img=cutil.draw_model_output_with_nms(img,semi)
                 t_img=to_tensor(img)

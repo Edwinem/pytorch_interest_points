@@ -12,8 +12,9 @@ import logging
 import shutil
 import torch
 
-from base import BaseDataLoader
 
+#Local includes
+from base import BaseDataLoader
 from data_loader.utils.pipeline import parse_primitives
 from data_loader.utils.synthetic_shapes_funcs import set_random_state,generate_background
 import data_loader.utils.synthetic_shapes_funcs as synthetic_dataset
@@ -92,7 +93,15 @@ class SyntheticDataSet(Dataset):
         'gaussian_noise'
     ]
 
-    def __init__(self, data_dir, config=default_config,force_recache=False,shuffle=False):
+    def __init__(self, data_dir, config=default_config,force_recache=False,shuffle=False,cache_in_memory=True):
+        '''
+
+        :param data_dir: Directory where you want to store the generated shapes
+        :param config: configuration of the dataset(shapes,augmentations,...)
+        :param force_recache: Force the dataset to regenerate the synthetic shapes
+        :param shuffle: Boolean to enable reshuffling of the data
+        :param cache_in_memory: Cache the whole dataset in memory rather then loading from disk
+        '''
         self.data_dir=data_dir
         self.config=config
         self.useAlbumentations=False
@@ -143,9 +152,31 @@ class SyntheticDataSet(Dataset):
                 sample=(os.path.join(img_folder,'training',img_files[idx]),os.path.join(pts_folder,'training',pt_files[idx]))
                 self.train_samples.append(sample)
 
-            if shuffle:
-                import random
-                random.shuffle(self.train_samples)
+        if shuffle:
+            import random
+            random.shuffle(self.train_samples)
+
+
+        self.cache_in_memory=cache_in_memory
+        if cache_in_memory:
+            cached_samples=[]
+            for sample in tqdm(self.train_samples,desc="Loading Training Samples To Memory"):
+                image = cv2.imread(sample[0], 0)
+                image = image.astype('float32') / 255.
+
+                pts=np.load(sample[1]).astype(np.float32)
+                pts=np.reshape(pts, [-1, 2])
+
+                data = {'image': image, 'keypoints': pts}
+                data = pipeline.add_dummy_valid_mask(data)
+                data = pipeline.add_keypoint_map(data)
+                cached_samples.append(data)
+            self.cached_samples=cached_samples
+
+
+
+
+
         # # Shuffle
         # for s in splits:
         #     perm = np.random.RandomState(0).permutation(len(splits[s]['images']))
@@ -183,7 +214,7 @@ class SyntheticDataSet(Dataset):
         #     for obj in ['images', 'points']:
         #         splits[s][obj] = np.array(splits[s][obj])[perm].tolist()
 
-        self.split= splits
+        #self.split= splits
 
     def __len__(self):
         return len(self.train_samples)
@@ -199,19 +230,22 @@ class SyntheticDataSet(Dataset):
         def _read_points(filename):
             return np.load(filename).astype(np.float32)
 
-        sample=self.train_samples[index]
-        image=_read_image(sample[0])
-        pts=np.reshape(_read_points(sample[1]),[-1, 2])
 
-        data={'image':image,'keypoints':pts}
-        data=pipeline.add_dummy_valid_mask(data)
+        if not self.cache_in_memory:
+            sample=self.train_samples[index]
+            image=_read_image(sample[0])
+            pts=np.reshape(_read_points(sample[1]),[-1, 2])
 
-        # Apply augmentation
-        self.AugmentData(data)
+            data={'image':image,'keypoints':pts}
+            data=pipeline.add_dummy_valid_mask(data)
 
-        # Convert the point coordinates to a dense keypoint map
-        data = pipeline.add_keypoint_map(data)
+            # Apply augmentation
+            #self.AugmentData(data)
 
+            # Convert the point coordinates to a dense keypoint map
+            data = pipeline.add_keypoint_map(data)
+        else:
+            data=self.cached_samples[index]
         #Convert to tensors
         image=torch.from_numpy(data['image'])
         valid_mask = torch.from_numpy(data['valid_mask'])

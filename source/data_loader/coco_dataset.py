@@ -6,6 +6,9 @@ from torch.utils.data.dataset import Dataset
 from base import BaseDataLoader
 
 
+import os
+
+
 class COCODataLoader(BaseDataLoader):
     def __init__(
         self, batch_size,
@@ -19,7 +22,41 @@ class COCODataLoader(BaseDataLoader):
 
 
 class COCODataSet(Dataset):
-    def __init__(self, data_dir, training):
+    default_config = {
+        'labels': None,
+        'cache_in_memory': False,
+        'validation_size': 100,
+        'truncate': None,
+        'preprocessing': {
+            'resize': [240, 320]
+        },
+        'num_parallel_calls': 10,
+        'augmentation': {
+            'photometric': {
+                'enable': False,
+                'primitives': 'all',
+                'params': {},
+                'random_order': True,
+            },
+            'homographic': {
+                'enable': False,
+                'params': {},
+                'valid_border_margin': 0,
+            },
+        },
+        'warped_pair': {
+            'enable': False,
+            'params': {},
+            'valid_border_margin': 0,
+        },
+    }
+
+
+
+    def __init__(self, data_dir, training,config=default_config):
+        basepath=os.path.join
+
+
         print('')
 
     def __getitem__(self, index):

@@ -12,11 +12,12 @@
       "batch_size": 32,
       "shuffle": true,
       "validation_split": 0.0,
-      "num_workers": 0,
+      "num_workers": 4,
       "pin_memory": true,
       "dataset_args": {
-        "data_dir": "../data",
-        "shuffle":true
+        "data_dir": "../data",  //directory where to store and load the generated synthetic shapes
+        "shuffle":true,
+        "cache_in_memory":false //load the synthetic shapes data into memory for faster training
       }
     }
   },
