@@ -17,3 +17,14 @@ def my_metric2(output, target, k=3):
         for i in range(k):
             correct += torch.sum(pred[:, i] == target).item()
     return correct / len(target)
+
+
+
+# def CornerPrecision(output,target):
+#     pred = outputs['pred']
+#     labels = inputs['keypoint_map']
+#
+#     precision = tf.reduce_sum(pred*labels) / tf.reduce_sum(pred)
+#     recall = tf.reduce_sum(pred*labels) / tf.reduce_sum(labels)
+#
+#     return {'precision': precision, 'recall': recall}

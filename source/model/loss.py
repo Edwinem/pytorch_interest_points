@@ -1,6 +1,8 @@
 from torch import nn
 import torch
 
+import source.utils.pytorch_tf_ops as pytf
+
 
 class CrossEntropyLoss(nn.Module):
     def __init__(self):
@@ -20,89 +22,72 @@ class MSELoss(nn.Module):
         return self.loss_fn(logits, target)
 
 
-class SpaceToDepth(nn.Module):
-    def __init__(self, block_size):
-        super(SpaceToDepth, self).__init__()
-        self.block_size = block_size
-        self.block_size_sq = block_size*block_size
-
-    def forward(self, input):
-        output = input.permute(0, 2, 3, 1)
-        (batch_size, s_height, s_width, s_depth) = output.size()
-        d_depth = s_depth * self.block_size_sq
-        d_width = int(s_width / self.block_size)
-        d_height = int(s_height / self.block_size)
-        t_1 = output.split(self.block_size, 2)
-        stack = [t_t.contiguous().view(batch_size, d_height, d_depth) for t_t in t_1]
-        output = torch.stack(stack, 1)
-        output = output.permute(0, 2, 1, 3)
-        output = output.permute(0, 3, 1, 2)
-        return output
-
-class DepthToSpace(nn.Module):
-    def __init__(self, block_size):
-        super(DepthToSpace, self).__init__()
-        self.block_size = block_size
-        self.block_size_sq = block_size*block_size
-
-    def forward(self, input):
-        output = input.permute(0, 2, 3, 1)
-        (batch_size, input_height, input_width, input_depth) = output.size()
-        output_depth = int(input_depth / self.block_size_sq)
-        output_width = int(input_width * self.block_size)
-        output_height = int(input_height * self.block_size)
-        t_1 = output.reshape(batch_size, input_height, input_width, self.block_size_sq, output_depth)
-        spl = t_1.split(self.block_size, 3)
-        stacks = [t_t.reshape(batch_size,input_height,output_width,output_depth) for t_t in spl]
-        output = torch.stack(stacks,0).transpose(0,1).permute(0,2,1,3,4).reshape(batch_size,output_height,output_width,output_depth)
-        output = output.permute(0, 3, 1, 2)
-        return output
-
 class DetectorLoss(nn.Module):
-    def __init__(self,grid_size):
-        super(DetectorLoss,self).__init__()
+    '''
+    Calculates the Error using the CrossEntropyLoss
 
-        self.grid_size=grid_size
-        self.s2d=SpaceToDepth(8)
+    Typically the grid_size is 8 so that can do that mapping in the comments
 
-    def forward(self,logits,keypoint_map, valid_mask=None):
-        def detector_loss(logits,keypoint_map, valid_mask=None, **config):
-            # Convert the boolean labels to indices including the "no interest point" dustbin
-            labels = tf.to_float(keypoint_map[..., tf.newaxis])  # for GPU
-            labels = tf.space_to_depth(labels, config['grid_size'])
-            shape = tf.concat([tf.shape(labels)[:3], [1]], axis=0)
-            labels = tf.argmax(tf.concat([2 * labels, tf.ones(shape)], 3), axis=3)
+    '''
 
-            # Mask the pixels if bordering artifacts appear
-            valid_mask = tf.ones_like(keypoint_map) if valid_mask is None else valid_mask
-            valid_mask = tf.to_float(valid_mask[..., tf.newaxis])  # for GPU
-            valid_mask = tf.space_to_depth(valid_mask, config['grid_size'])
-            valid_mask = tf.reduce_prod(valid_mask, axis=3)  # AND along the channel dim
+    def __init__(self, grid_size):
+        super(DetectorLoss, self).__init__()
 
-            loss = tf.losses.sparse_softmax_cross_entropy(
-                labels=labels, logits=logits, weights=valid_mask)
+        self.grid_size = grid_size
+        self.s2d = pytf.SpaceToDepth(self.grid_size)
 
-        labels=keypoint_map
-        labels=labels[:,None,:,:]
-        labels=self.s2d.forward(labels)
-        uno=torch.tensor([1],device=labels.device)
-        new_shape=labels.shape
-        new_shape=torch.Size((new_shape[0],1,new_shape[2],new_shape[3]))
-        labels=torch.cat((2*labels,torch.ones(new_shape,device=labels.device)),dim=1)
-        labels=torch.argmax(labels,dim=1)
+    def forward(self, logits, keypoint_map, valid_mask=None):
+        '''
+
+        :param logits: Keypoint output from network is format B,C=65,H/8,W/8
+        :param keypoint_map: Ground truth keypoint map is of format 1,H,W
+        :param valid_mask:
+        :return:
+        '''
+        # Explanation:
+        # Model outputs to size C=65,H/8,W/8 . The 65 channels represent the 8x8 grid in the full scale version, +1
+        # for the no keypoint bin
+
+        # Modify keypoint map to correct size
+        labels = keypoint_map
+        labels = labels[:, None, :, :]
+        # Convert from 1xHxW to 64xH/8xW/8
+        labels = self.s2d.forward(labels)
+
+        new_shape = labels.shape
+        new_shape = torch.Size((new_shape[0], 1, new_shape[2], new_shape[3]))
+
+        # Here we add an extra channel for the no_keypoint_bin i.e channel 65 with all 1(ones)
+        # And ensure all the keypoint locations have value 2 not 1
+        labels = torch.cat((2 * labels, torch.ones(new_shape, device=labels.device)), dim=1)
+        # labels is now size B,C=65,H,W
+
+        # we now take the argmax of the channels dimension. If there was a keypoint at a channel location then it has the
+        # value 2 so its index is the max. If instead though as in most cases there is no keypoint then it will return
+        # the 65 channel so index 64
+        labels = torch.argmax(labels, dim=1)
+
+        # Mask the pixels if bordering artifacts appear
+        # valid_mask = torch.ones_like(keypoint_map) if valid_mask is None else valid_mask
+        # valid_mask = valid_mask[:, None, :, :].float()
+        # valid_mask = self.s2d.forward(valid_mask)
+        # valid_mask = torch.prod(valid_mask, dim=1)
+
+        # valid_mask = torch.ones_like(logits) if valid_mask is None else valid_mask
+        # valid_mask = valid_mask.float()
+        # valid_mask = torch.prod(valid_mask, dim=1)
 
         loss_fn = nn.CrossEntropyLoss()
-        loss = loss_fn(logits,labels.long())
+        loss = loss_fn(logits, labels.long())
         return loss
 
 
-
-
 class DescriptorLoss(nn.Module):
-    def __init__(self,grid_size):
-        super(DescriptorLoss,self).__init__()
+    def __init__(self, grid_size):
+        super(DescriptorLoss, self).__init__()
 
-        self.grid_size=grid_size
+        self.grid_size = grid_size
+
 
 def descriptor_loss(descriptors, warped_descriptors, homographies,
                     valid_mask=None, **config):
@@ -148,7 +133,7 @@ def descriptor_loss(descriptors, warped_descriptors, homographies,
     # Mask the pixels if bordering artifacts appear
     valid_mask = tf.ones([batch_size,
                           Hc * config['grid_size'],
-                          Wc * config['grid_size']], tf.float32)\
+                          Wc * config['grid_size']], tf.float32) \
         if valid_mask is None else valid_mask
     valid_mask = tf.to_float(valid_mask[..., tf.newaxis])  # for GPU
     valid_mask = tf.space_to_depth(valid_mask, config['grid_size'])

@@ -92,9 +92,10 @@ class SyntheticDataSet(Dataset):
         'gaussian_noise'
     ]
 
-    def __init__(self, data_dir, config=default_config,force_recache=False):
+    def __init__(self, data_dir, config=default_config,force_recache=False,shuffle=False):
         self.data_dir=data_dir
         self.config=config
+        self.useAlbumentations=False
 
 
         primitives = parse_primitives(config['primitives'], self.drawing_primitives)
@@ -142,7 +143,9 @@ class SyntheticDataSet(Dataset):
                 sample=(os.path.join(img_folder,'training',img_files[idx]),os.path.join(pts_folder,'training',pt_files[idx]))
                 self.train_samples.append(sample)
 
-
+            if shuffle:
+                import random
+                random.shuffle(self.train_samples)
         # # Shuffle
         # for s in splits:
         #     perm = np.random.RandomState(0).permutation(len(splits[s]['images']))
@@ -186,18 +189,6 @@ class SyntheticDataSet(Dataset):
         return len(self.train_samples)
 
     def __getitem__(self, index):
-        def _gen_shape():
-            primitives = parse_primitives(self.config['primitives'], self.drawing_primitives)
-            while True:
-                primitive = np.random.choice(primitives)
-                image = synthetic_dataset.generate_background(
-                    self.config['generation']['image_size'],
-                    **self.config['generation']['params']['generate_background'])
-                points = np.array(getattr(synthetic_dataset, primitive)(
-                    image, **self.config['generation']['params'].get(primitive, {})))
-                yield (np.expand_dims(image, axis=-1).astype(np.float32),
-                       np.flip(points.astype(np.float32), 1))
-
         def _read_image(filename):
             image = cv2.imread(filename,0)
             image=image.astype('float32') / 255.
@@ -208,15 +199,6 @@ class SyntheticDataSet(Dataset):
         def _read_points(filename):
             return np.load(filename).astype(np.float32)
 
-        if self.config['on-the-fly']:
-            data = tf.data.Dataset.from_generator(
-                _gen_shape, (tf.float32, tf.float32),
-                (tf.TensorShape(config['generation']['image_size'] + [1]),
-                 tf.TensorShape([None, 2])))
-            data = data.map(lambda i, c: pipeline.downsample(
-                i, c, **config['preprocessing']))
-
-
         sample=self.train_samples[index]
         image=_read_image(sample[0])
         pts=np.reshape(_read_points(sample[1]),[-1, 2])
@@ -224,33 +206,47 @@ class SyntheticDataSet(Dataset):
         data={'image':image,'keypoints':pts}
         data=pipeline.add_dummy_valid_mask(data)
 
-
-
         # Apply augmentation
-        if self.config['augmentation']['photometric']['enable']:
-            data = pipeline.photometric_augmentation(
-                data, **self.config['augmentation']['photometric'])
-        if self.config['augmentation']['homographic']['enable']:
-            data = pipeline.homographic_augmentation(
-                data, **self.config['augmentation']['homographic'])
+        self.AugmentData(data)
 
         # Convert the point coordinates to a dense keypoint map
         data = pipeline.add_keypoint_map(data)
 
         #Convert to tensors
-        data['image']=torch.from_numpy(data['image'])
-        data['keypoints']=torch.from_numpy(data['keypoints'])
-        data['valid_mask'] = torch.from_numpy(data['valid_mask'])
-        data['keypoint_map']=torch.from_numpy(data['keypoint_map'])
-        keypoints=data['keypoints']
-        pad_size=int(500-keypoints.shape[0])
-        pad=torch.zeros((pad_size,2))
-        keypoints=torch.cat((keypoints,pad))
-        #return data
+        image=torch.from_numpy(data['image'])
+        valid_mask = torch.from_numpy(data['valid_mask'])
+        keypoint_map=torch.from_numpy(data['keypoint_map'])
 
-        data['image']=torch.unsqueeze(data['image'],0)
+        #Have to pad the keypoint data if you use pythons default collate
+        # keypoints=torch.from_numpy(data['keypoints'])
 
-        return data['image'],data['keypoint_map'],data['valid_mask']
+
+        image=torch.unsqueeze(image,0)
+
+        return image,keypoint_map,valid_mask
+
+
+    def AugmentData(self,data):
+        if self.useAlbumentations:
+            import albumentations as A
+
+
+
+
+        else:
+
+            if self.config['augmentation']['photometric']['enable']:
+                data = pipeline.photometric_augmentation(
+                    data, **self.config['augmentation']['photometric'])
+            if self.config['augmentation']['homographic']['enable']:
+                data = pipeline.homographic_augmentation(
+                    data, **self.config['augmentation']['homographic'])
+
+
+        return data
+
+
+
 
     def dump_primitive_data_tar(self, primitive, tar_path, config):
         temp_dir =os.path.join(self.data_dir, 'tmp', primitive)
@@ -288,12 +284,13 @@ class SyntheticDataSet(Dataset):
 
             num_processes=max(cpu_count()-2,1)
             indices=range(size)
+            #Don't know if this is actually faster
             try:
                 import parmap
                 parmap.map(generate_pts, config,primitive,img_dir,pts_dir,indices, pm_pbar=True,pm_processes=num_processes,pm_chunksize=500)
             except:
                 for i in tqdm(indices):
-                     generate_pts(config,primitive,img_dir,pts_dir,i)
+                 generate_pts(config,primitive,img_dir,pts_dir,i)
 
 
 def generate_pts(config,primitive_type,img_dir,pts_dir,index):

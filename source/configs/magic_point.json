@@ -1,29 +1,22 @@
 {
   "name": "synthetic_shapes",
-    "n_gpu": 1,
+  "n_gpu": 1,
+  "gpu_list": [1],
   "model": {
     "type": "MagicPointModel",
     "args": {}
   },
-  //    "name": "magic_point",
-  //    "batch_size": 64,
-  //    "eval_batch_size": 50,
-  //    "learning_rate": 0.001,
-  //    "kernel_reg": 0.0,
-  //    "detection_threshold": 0.001,
-  //    "nms": 4
-  //  },
-
   "data_loader": {
     "type": "SyntheticDataLoader",
     "args": {
-      "batch_size": 2,
+      "batch_size": 32,
       "shuffle": true,
       "validation_split": 0.0,
       "num_workers": 0,
       "pin_memory": true,
       "dataset_args": {
-        "data_dir": "/home/nikolausmitchell/programming/pytorch_interest_points/data"
+        "data_dir": "../data",
+        "shuffle":true
       }
     }
   },
@@ -40,7 +33,7 @@
       "type": "DetectorLoss",
       "weight": 1,
       "args": {
-        "grid_size":8
+        "grid_size": 8
       }
     }
   ],
@@ -57,19 +50,16 @@
   },
   "trainer": {
     "type": "MagicPointTrainer",
-    "epochs": 100,
-    "save_dir": "saved/",
-    "save_period": 1,
+    "epochs": 30,
+    "save_dir": "experiments/",
+    "save_period": 5,
     "verbosity": 2,
     "monitor": "min val_loss",
     "early_stop": 10,
     "tensorboardX": true,
-    "log_dir": "saved/runs"
+    "log_dir": "saved/runs",
+    "log_step": 100
   },
-  "train_iter": 200000,
-  "eval_iter": 200,
-  "validation_interval": 1000,
-  "seed": 0,
   "primitives": "all",
   "truncate": {
     "draw_ellipses": 0.3,

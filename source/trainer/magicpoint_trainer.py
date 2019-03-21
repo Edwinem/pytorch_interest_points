@@ -2,6 +2,9 @@ import numpy as np
 import torch
 from torchvision.utils import make_grid
 from base import BaseTrainer
+from torchvision.transforms.functional import to_tensor
+
+import source.utils.corner_utils as cutil
 
 
 class MagicPointTrainer(BaseTrainer):
@@ -20,7 +23,7 @@ class MagicPointTrainer(BaseTrainer):
         self.valid_data_loader = valid_data_loader
         self.do_validation = self.valid_data_loader is not None
         self.lr_scheduler = lr_scheduler
-        self.log_step = int(np.sqrt(data_loader.batch_size))
+        self.log_step = config['trainer'].get('log_step',int(np.sqrt(data_loader.batch_size)))
 
     def _eval_metrics(self, output, target):
         acc_metrics = np.zeros(len(self.metrics))
@@ -69,10 +72,10 @@ class MagicPointTrainer(BaseTrainer):
             loss.backward()
             self.optimizer.step()
 
-
+            loss_val=loss.item()
             self.writer.set_step((epoch - 1) * len(self.data_loader) + batch_idx)
-            self.writer.add_scalar('loss', loss.item())
-            total_loss += loss.item()
+            self.writer.add_scalar('loss', loss_val)
+            total_loss += loss_val
             #total_metrics += self._eval_metrics(output, target)
 
             if self.verbosity >= 2 and batch_idx % self.log_step == 0:
@@ -81,8 +84,15 @@ class MagicPointTrainer(BaseTrainer):
                     batch_idx * self.data_loader.batch_size,
                     self.data_loader.n_samples,
                     100.0 * batch_idx / len(self.data_loader),
-                    loss.item()))
-               # self.writer.add_image('input', make_grid(data.cpu(), nrow=8, normalize=True))
+                    loss_val))
+            if self.verbosity >= 2 and batch_idx % self.log_step*5 == 0:
+                img_data=image.cpu().numpy()[0]
+                semi=output.cpu().detach().numpy()[0]
+                gt_heatmap=kp_map.cpu().numpy()[0]
+                img=cutil.draw_heatmap(img_data,gt_heatmap,color=(0,1.0,0))
+                img=cutil.draw_model_output_with_nms(img,semi)
+                t_img=to_tensor(img)
+                self.writer.add_image('pts',t_img)
 
         log = {
             'loss': total_loss / len(self.data_loader),

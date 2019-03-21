@@ -103,7 +103,18 @@ class BaseTrainer:
         Full training logic
         """
         for epoch in range(self.start_epoch, self.epochs + 1):
-            result = self._train_epoch(epoch)
+
+            #Profile the epoch runtime if enabled
+            result=None
+            if self.config.get('profile_epoch',False) == True:
+                import cProfile
+                filename =os.path.join(self.checkpoint_dir,'profile.txt')
+                ret=[]
+                cProfile.runctx('ret.append(self._train_epoch(epoch))',globals(),locals(),filename)
+                result=ret[0]
+            else:
+                result = self._train_epoch(epoch)
+
 
             # save logged informations into log dict
             log = {'epoch': epoch}
@@ -170,7 +181,7 @@ class BaseTrainer:
         """
         arch = type(self.model).__name__
         state = {
-            'arch': arch,
+            'model': arch,
             'epoch': epoch,
             'logger': self.train_logger,
             'state_dict': self.model.state_dict(),
@@ -198,13 +209,13 @@ class BaseTrainer:
         self.mnt_best = checkpoint['monitor_best']
 
         # load architecture params from checkpoint.
-        if checkpoint['config']['arch'] != self.config['arch']:
+        if checkpoint['config']['model'] != self.config['model']:
             self.logger.warning(
                 'Warning: Architecture configuration given in config file is different from that of checkpoint. ' + \
                 'This may yield an exception while state_dict is being loaded.')
         self.model.load_state_dict(checkpoint['state_dict'])
 
-        if self.config['finetune'] == True:
+        if self.config.get('finetune',False) == True:
             return
 
         # load optimizer state from checkpoint only when optimizer type is not changed. 

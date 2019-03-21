@@ -5,18 +5,14 @@ import torch
 
 
 class SuperPointNiko(BaseModel):
-    def __init__(self,use_batch_norm=False):
+    def __init__(self, use_batch_norm=False):
         super(SuperPointNiko, self).__init__()
 
-
-        self.use_batch_norm=use_batch_norm
-
-
-
+        self.use_batch_norm = use_batch_norm
 
         self.relu = torch.nn.ReLU(inplace=True)
         self.pool = torch.nn.MaxPool2d(kernel_size=2, stride=2)
-        #Encoder
+        # Encoder
         self.conv1a = torch.nn.Conv2d(1, 64, kernel_size=3, stride=1, padding=1)
         self.conv1b = torch.nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
         self.conv2a = torch.nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
@@ -27,7 +23,6 @@ class SuperPointNiko(BaseModel):
         self.conv4b = torch.nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1)
         # Detector portion
 
-
         self.convPa = torch.nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1)
         # its 65 cause we have 1 extra bin for no detected points
         self.convPb = torch.nn.Conv2d(256, 65, kernel_size=1, stride=1, padding=0)
@@ -35,8 +30,8 @@ class SuperPointNiko(BaseModel):
         self.convDa = torch.nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1)
         self.convDb = torch.nn.Conv2d(256, 256, kernel_size=1, stride=1, padding=0)
 
-        if(self.use_batch_norm):
-            self.b_1a=nn.BatchNorm2d(64)
+        if (self.use_batch_norm):
+            self.b_1a = nn.BatchNorm2d(64)
             self.b_1b = nn.BatchNorm2d(64)
             self.b_2a = nn.BatchNorm2d(64)
             self.b_2b = nn.BatchNorm2d(64)
@@ -45,24 +40,26 @@ class SuperPointNiko(BaseModel):
             self.b_4a = nn.BatchNorm2d(128)
             self.b_4b = nn.BatchNorm2d(128)
 
+            self.b_Pa = nn.BatchNorm2d(256)
+            self.b_Pb = nn.BatchNorm2d(65)
 
-
-
+            self.b_Da = nn.BatchNorm2d(256)
+            self.b_Db = nn.BatchNorm2d(256)
 
     def forward(self, x):
 
         if self.use_batch_norm:
-            #1
-            x=self.conv1a(x)
-            x=self.relu(x)
-            x=self.b_1a(x)
+            # 1
+            x = self.conv1a(x)
+            x = self.relu(x)
+            x = self.b_1a(x)
 
-            x=self.conv1b(x)
-            x=self.relu(x)
-            x=self.b_1b(x)
-            x=self.pool(x)
+            x = self.conv1b(x)
+            x = self.relu(x)
+            x = self.b_1b(x)
+            x = self.pool(x)
 
-            #2
+            # 2
             x = self.conv2a(x)
             x = self.relu(x)
             x = self.b_2a(x)
@@ -70,9 +67,9 @@ class SuperPointNiko(BaseModel):
             x = self.conv2b(x)
             x = self.relu(x)
             x = self.b_2b(x)
-            x=self.pool(x)
+            x = self.pool(x)
 
-            #3
+            # 3
             x = self.conv3a(x)
             x = self.relu(x)
             x = self.b_3a(x)
@@ -80,9 +77,9 @@ class SuperPointNiko(BaseModel):
             x = self.conv3b(x)
             x = self.relu(x)
             x = self.b_3b(x)
-            x=self.pool(x)
+            x = self.pool(x)
 
-            #4
+            # 4
 
             x = self.conv4a(x)
             x = self.relu(x)
@@ -91,6 +88,21 @@ class SuperPointNiko(BaseModel):
             x = self.conv4b(x)
             x = self.relu(x)
             x = self.b_4b(x)
+
+            # Detector
+            det = self.relu(self.convPa(x))
+            det=self.b_Pa(det)
+
+            heatmap = self.convPb(det)
+            heatmap = self.b_Pb(heatmap)
+
+            #Desc
+            desc = self.relu(self.convDa(x))
+            desc=self.b_Da(desc)
+            desc = self.convDb(desc)
+            desc=self.b_Db(desc)
+
+
         else:
             # 1
             x = self.conv1a(x)
@@ -124,13 +136,15 @@ class SuperPointNiko(BaseModel):
             x = self.conv4b(x)
             x = self.relu(x)
 
-        #Detector
-        det=self.relu(self.convPa(x))
-        heatmap=self.convPb(det)
+            # Detector
+            det = self.relu(self.convPa(x))
 
-        #Desc
-        desc=self.relu(self.convDa(x))
-        desc=self.convDb(x)
+            heatmap = self.convPb(det)
+
+            # Desc
+            desc = self.relu(self.convDa(x))
+            desc = self.convDb(desc)
+
 
         dn = torch.norm(desc, p=2, dim=1)  # Compute the norm.
         desc = desc.div(torch.unsqueeze(dn, 1))
@@ -138,88 +152,21 @@ class SuperPointNiko(BaseModel):
 
 
 class MagicPointModel(nn.Module):
-    def __init__(self,use_batchnorm=False):
+    def __init__(self, use_batchnorm=False):
         super(MagicPointModel, self).__init__()
-        
-        self.SuperPointModel=SuperPointNiko(use_batchnorm)
-        self.use_batch_norm=use_batchnorm
-        
-    def forward(self, x):
+
+        self.SuperPointModel = SuperPointNiko(use_batchnorm)
+        self.use_batch_norm = use_batchnorm
+
+        #Freeze the descriptor layers as we dont use it in magicpoint
+        self.SuperPointModel.convDa.requires_grad=False
+        self.SuperPointModel.convDb.requires_grad = False
         if self.use_batch_norm:
-            #1
-            x=self.SuperPointModel.conv1a(x)
-            x=self.SuperPointModel.relu(x)
-            x=self.SuperPointModel.b_1a(x)
+            self.SuperPointModel.b_Da.requires_grad = False
+            self.SuperPointModel.b_Db.requires_grad = False
 
-            x=self.SuperPointModel.conv1b(x)
-            x=self.SuperPointModel.relu(x)
-            x=self.SuperPointModel.b_1b(x)
-            x=self.SuperPointModel.pool(x)
 
-            #2
-            x = self.SuperPointModel.conv2a(x)
-            x = self.SuperPointModel.relu(x)
-            x = self.SuperPointModel.b_2a(x)
+    def forward(self, x):
 
-            x = self.SuperPointModel.conv2b(x)
-            x = self.SuperPointModel.relu(x)
-            x = self.SuperPointModel.b_2b(x)
-            x=self.SuperPointModel.pool(x)
-
-            #3
-            x = self.SuperPointModel.conv3a(x)
-            x = self.SuperPointModel.relu(x)
-            x = self.SuperPointModel.b_3a(x)
-
-            x = self.SuperPointModel.conv3b(x)
-            x = self.SuperPointModel.relu(x)
-            x = self.SuperPointModel.b_3b(x)
-            x=self.SuperPointModel.pool(x)
-
-            #4
-
-            x = self.SuperPointModel.conv4a(x)
-            x = self.SuperPointModel.relu(x)
-            x = self.SuperPointModel.b_4a(x)
-
-            x = self.SuperPointModel.conv4b(x)
-            x = self.SuperPointModel.relu(x)
-            x = self.SuperPointModel.b_4b(x)
-        else:
-            # 1
-            x = self.SuperPointModel.conv1a(x)
-            x = self.SuperPointModel.relu(x)
-
-            x = self.SuperPointModel.conv1b(x)
-            x = self.SuperPointModel.relu(x)
-            x = self.SuperPointModel.pool(x)
-
-            # 2
-            x = self.SuperPointModel.conv2a(x)
-            x = self.SuperPointModel.relu(x)
-
-            x = self.SuperPointModel.conv2b(x)
-            x = self.SuperPointModel.relu(x)
-            x = self.SuperPointModel.pool(x)
-
-            # 3
-            x = self.SuperPointModel.conv3a(x)
-            x = self.SuperPointModel.relu(x)
-
-            x = self.SuperPointModel.conv3b(x)
-            x = self.SuperPointModel.relu(x)
-            x = self.SuperPointModel.pool(x)
-
-            # 4
-
-            x = self.SuperPointModel.conv4a(x)
-            x = self.SuperPointModel.relu(x)
-
-            x = self.SuperPointModel.conv4b(x)
-            x = self.SuperPointModel.relu(x)
-
-        #Detector
-        det=self.SuperPointModel.relu(self.SuperPointModel.convPa(x))
-        heatmap=self.SuperPointModel.convPb(det)
-        
+        heatmap,desc=self.SuperPointModel(x)
         return heatmap
