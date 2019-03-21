@@ -1,5 +1,5 @@
 import sys
-sys.path.append('/home/nikolausmitchell/Programming/python_projects/interest_points/niko_point_matcher')
+#sys.path.append('/home/nikolausmitchell/Programming/python_projects/interest_points/niko_point_matcher')
 
 
 import os
