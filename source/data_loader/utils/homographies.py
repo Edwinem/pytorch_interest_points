@@ -139,6 +139,13 @@ def flat2mat(H):
     """
     return np.reshape(np.concatenate([H, np.ones([np.shape(H)[0], 1])], axis=1), [-1, 3, 3])
 
+def flat2mat_torch(H):
+    """
+    Converts a flattened homography transformation with shape `[1, 8]` to its
+    corresponding homography matrix with shape `[1, 3, 3]`.
+    """
+    return torch.reshape(torch.cat([H, torch.ones([torch.Size(H)[0], 1])], axis=1), [-1, 3, 3])
+
 
 def invert_homography(H):
     """
@@ -146,12 +153,26 @@ def invert_homography(H):
     """
     return mat2flat(np.linalg.inv((flat2mat(H))))
 
+def invert_homography_torch(H):
+    """
+    Computes the inverse transformation for a flattened homography transformation.
+    """
+    return mat2flat_torch(torch.inverse((flat2mat_torch(H))))
+
 def mat2flat(H):
     """
     Converts an homography matrix with shape `[1, 3, 3]` to its corresponding flattened
     homography transformation with shape `[1, 8]`.
     """
     H = np.reshape(H, [-1, 9])
+    return (H / H[:, 8:9])[:, :8]
+
+def mat2flat_torch(H):
+    """
+    Converts an homography matrix with shape `[1, 3, 3]` to its corresponding flattened
+    homography transformation with shape `[1, 8]`.
+    """
+    H = torch.reshape(H, [-1, 9])
     return (H / H[:, 8:9])[:, :8]
 
 
@@ -200,6 +221,32 @@ def warp_points(points, homography):
     warped_points = np.tensordot(points, H_inv, [[1], [0]])
     warped_points = warped_points[:, :2, :] / warped_points[:, 2:, :]
     warped_points = np.transpose(warped_points, [2, 0, 1])[:, :, ::-1]
+
+    return warped_points[0] if len(homography.shape) == 1 else warped_points
+
+
+def warp_points_torch(points, homography):
+    """
+    Warp a list of points with the INVERSE of the given homography.
+    The inverse is used to be coherent with tf.contrib.image.transform
+    Arguments:
+        points: list of N points, shape (N, 2).
+        homography: batched or not (shapes (B, 8) and (8,) respectively).
+    Returns: a Tensor of shape (N, 2) or (B, N, 2) (depending on whether the homography
+            is batched) containing the new coordinates of the warped points.
+    """
+    H = torch.unsqueeze(homography, axis=0) if len(homography.shape) == 1 else homography
+
+    # Get the points to the homogeneous format
+    num_points = torch.Size(points)[0]
+    points = points.float()[:, ::-1]
+    points = torch.cat([points, torch.ones([num_points, 1]).float()], -1)
+
+    # Apply the homography
+    H_inv = torch.transpose(flat2mat_torch(invert_homography(H)))
+    warped_points = torch.tensordot(points, H_inv, [[1], [0]])
+    warped_points = warped_points[:, :2, :] / warped_points[:, 2:, :]
+    warped_points = torch.transpose(warped_points, [2, 0, 1])[:, :, ::-1]
 
     return warped_points[0] if len(homography.shape) == 1 else warped_points
 
