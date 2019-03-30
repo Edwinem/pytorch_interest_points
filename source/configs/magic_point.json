@@ -1,7 +1,6 @@
 {
   "name": "synthetic_shapes",
   "n_gpu": 1,
-  "gpu_list": [1],
   "model": {
     "type": "MagicPointModel",
     "args": {}
@@ -9,10 +8,10 @@
   "data_loader": {
     "type": "SyntheticDataLoader",
     "args": {
-      "batch_size": 32,
+      "batch_size": 1,
       "shuffle": true,
       "validation_split": 0.0,
-      "num_workers": 4,
+      "num_workers": 2,
       "pin_memory": true,
       "dataset_args": {
         "data_dir": "../data",  //directory where to store and load the generated synthetic shapes

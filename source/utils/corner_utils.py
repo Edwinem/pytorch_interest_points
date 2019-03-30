@@ -12,8 +12,11 @@ def process_to_heatmap(model_semi,grid_size=8):
 
     Hc=model_semi.shape[1]
     Wc = model_semi.shape[2]
+    dense = np.exp(model_semi)  # Softmax.
+    dense = dense / (np.sum(dense, axis=0) + .00001)  # Should sum to 1.
+
     #Remove dustbin
-    nodust = model_semi[:-1, :, :]
+    nodust = dense[:-1, :, :]
     heatmap = np.reshape(nodust, [Hc, Wc, grid_size, grid_size])
     heatmap = np.transpose(heatmap, [0, 2, 1, 3])
 

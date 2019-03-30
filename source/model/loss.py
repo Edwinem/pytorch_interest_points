@@ -1,8 +1,8 @@
 from torch import nn
 import torch
 
-import source.utils.pytorch_tf_ops as pytf
-from source.data_loader.utils.homographies import warp_points_torch
+import utils.pytorch_tf_ops as pytf
+from data_loader.utils.homographies import warp_points_torch
 
 
 
