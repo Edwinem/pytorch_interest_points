@@ -17,6 +17,7 @@ def process_to_heatmap(model_semi,grid_size=8):
 
     #Remove dustbin
     nodust = dense[:-1, :, :]
+    nodust = nodust.transpose(1, 2, 0)
     heatmap = np.reshape(nodust, [Hc, Wc, grid_size, grid_size])
     heatmap = np.transpose(heatmap, [0, 2, 1, 3])
 
